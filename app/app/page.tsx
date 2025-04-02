@@ -1,21 +1,60 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { ArrowRight, Search, Star } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useAuth } from "../context/AuthContext"
+import * as resourceService from "../services/resources"
+import { Resource } from "../services/resources"
 
 export default function Dashboard() {
   const [zipcode, setZipcode] = useState("")
+  const [recentResources, setRecentResources] = useState<Resource[]>([]);
+  const [savedResources, setSavedResources] = useState<Resource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchResources = async () => {
+      try {
+        setLoading(true);
+        const recentUpdates = await resourceService.getRecentUpdates(5);
+        setRecentResources(recentUpdates);
+        
+        // For now, we'll just use some dummy saved resources
+        // In a real app, you'd fetch the user's saved resources from the backend
+        setSavedResources(dummySavedResources);
+      } catch (error) {
+        console.error("Failed to fetch resources:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchResources();
+  }, []);
+
+  const handleSearch = () => {
+    const searchParams = new URLSearchParams();
+    if (zipcode) {
+      searchParams.append('zipcode', zipcode);
+    }
+    router.push(`/app/resources?${searchParams.toString()}`);
+  };
 
   return (
     <div className="p-6">
       <div className="flex flex-col gap-4 mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-[#333333]">Welcome back, Case Manager</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-[#333333]">
+          Welcome back, {user?.fullName || user?.username || 'Case Manager'}
+        </h1>
         <p className="text-[#555555] text-base">
           Find and update resources to help your clients get the support they need.
         </p>
@@ -33,7 +72,7 @@ export default function Dashboard() {
           />
           <Button
             className="absolute right-0 top-0 h-[48px] bg-[#007BFF] hover:bg-[#0056D2]"
-            onClick={() => (window.location.href = `/app/resources${zipcode ? `?zipcode=${zipcode}` : ""}`)}
+            onClick={handleSearch}
           >
             Search
           </Button>
@@ -58,41 +97,46 @@ export default function Dashboard() {
         </TabsList>
 
         <TabsContent value="recent">
-          <div className="overflow-x-auto pb-4">
-            <div className="flex space-x-4" style={{ minWidth: "max-content" }}>
-              {recentResources.map((resource) => (
-                <ResourceCard key={resource.id} resource={resource} />
-              ))}
+          {loading ? (
+            <div className="flex justify-center my-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#007BFF]"></div>
             </div>
-          </div>
-          <div className="mt-4 text-center">
-            <Button variant="outline" className="border-[#007BFF] text-[#007BFF] hover:bg-blue-50" asChild>
-              <Link href="/app/resources">
-                View All Resources <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto pb-4">
+                <div className="flex space-x-4" style={{ minWidth: "max-content" }}>
+                  {recentResources.map((resource) => (
+                    <ResourceCard key={resource.id} resource={resource} />
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 text-center">
+                <Button variant="outline" className="border-[#007BFF] text-[#007BFF] hover:bg-blue-50" asChild>
+                  <Link href="/app/resources">
+                    View All Resources <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="saved">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {savedResources.map((resource) => (
-              <ResourceCard key={resource.id} resource={resource} />
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex justify-center my-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#007BFF]"></div>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {savedResources.map((resource) => (
+                <ResourceCard key={resource.id} resource={resource} />
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
   )
-}
-
-interface Resource {
-  id: string
-  name: string
-  category: string
-  status: "available" | "limited" | "unavailable"
-  address: string
-  lastUpdated: string
 }
 
 interface ResourceCardProps {
@@ -137,32 +181,8 @@ function ResourceCard({ resource }: ResourceCardProps) {
   )
 }
 
-// Sample data
-const recentResources: Resource[] = [
-  {
-    id: "1",
-    name: "Community Shelter",
-    category: "Housing & Shelter",
-    status: "limited",
-    address: "123 Main St, Anytown, USA",
-    lastUpdated: "2 hours ago",
-  },
-  {
-    id: "2",
-    name: "Food Bank Central",
-    category: "Food & Nutrition",
-    status: "available",
-    address: "456 Oak Ave, Anytown, USA",
-    lastUpdated: "1 day ago",
-  },
-  {
-    id: "3",
-    name: "Mental Health Clinic",
-    category: "Healthcare & Mental Health",
-    status: "unavailable",
-    address: "789 Pine Rd, Anytown, USA",
-    lastUpdated: "3 hours ago",
-  },
+// Sample data for saved resources
+const dummySavedResources: Resource[] = [
   {
     id: "4",
     name: "Job Training Center",
@@ -179,24 +199,5 @@ const recentResources: Resource[] = [
     address: "202 Justice Ave, Anytown, USA",
     lastUpdated: "1 week ago",
   },
-]
-
-const savedResources: Resource[] = [
-  {
-    id: "4",
-    name: "Job Training Center",
-    category: "Employment & Education",
-    status: "available",
-    address: "101 Work Blvd, Anytown, USA",
-    lastUpdated: "5 days ago",
-  },
-  {
-    id: "5",
-    name: "Legal Aid Society",
-    category: "Legal & Financial Assistance",
-    status: "available",
-    address: "202 Justice Ave, Anytown, USA",
-    lastUpdated: "1 week ago",
-  },
-]
+];
 

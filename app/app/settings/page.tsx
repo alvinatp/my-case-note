@@ -1,130 +1,69 @@
 "use client"
 
-import { useState } from "react"
-import { Bell, Mail } from "lucide-react"
-
-import { Button } from "@/components/ui/button"
+import { useAuth } from "../../context/AuthContext"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Database, UserCog } from "lucide-react"
 
 export default function SettingsPage() {
-  const [isUpdating, setIsUpdating] = useState(false)
-
-  const handleSaveProfile = () => {
-    setIsUpdating(true)
-    // Simulate API call
-    setTimeout(() => {
-      setIsUpdating(false)
-      alert("Profile updated successfully!")
-    }, 1000)
-  }
-
+  const { user } = useAuth()
+  const isAdmin = user?.role === "ADMIN"
+  
   return (
-    <div className="p-6">
-      <div className="flex flex-col gap-4 mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-[#333333]">Settings</h1>
-        <p className="text-[#555555] text-base">Manage your account settings and preferences</p>
-      </div>
-
-      <div className="space-y-6">
-        <Card className="border border-[#E0E0E0] shadow-sm">
-          <CardHeader className="p-6 pb-3">
-            <CardTitle className="text-lg font-bold text-[#333333]">Profile</CardTitle>
-            <CardDescription className="text-[#666666]">Update your personal information</CardDescription>
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Account Settings</CardTitle>
+            <CardDescription>Manage your account preferences</CardDescription>
           </CardHeader>
-          <CardContent className="p-6 pt-3 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+          <CardContent>
+            <div className="space-y-2">
+              <p className="text-sm">
+                <strong>Username:</strong> {user?.username}
+              </p>
+              <p className="text-sm">
+                <strong>Full Name:</strong> {user?.fullName || "Not set"}
+              </p>
+              <p className="text-sm">
+                <strong>Role:</strong> {user?.role}
+              </p>
+            </div>
+            
+            <Button className="mt-4" variant="outline" asChild>
+              <Link href="/app/settings/profile">
+                <UserCog className="w-4 h-4 mr-2" />
+                Edit Profile
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+        
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Admin Tools</CardTitle>
+              <CardDescription>Manage application resources and settings</CardDescription>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-[#333333]">
-                  Full Name
-                </Label>
-                <Input id="name" defaultValue="Case Manager" className="border-[#CCCCCC]" />
+                <p className="text-sm">
+                  As an administrator, you have access to additional tools for managing resources and system settings.
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-[#333333]">
-                  Email
-                </Label>
-                <Input id="email" type="email" defaultValue="case.manager@example.com" className="border-[#CCCCCC]" />
-              </div>
-            </div>
-            <Button onClick={handleSaveProfile} disabled={isUpdating} className="bg-[#007BFF] hover:bg-[#0056D2]">
-              {isUpdating ? "Saving..." : "Save Changes"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-[#E0E0E0] shadow-sm">
-          <CardHeader className="p-6 pb-3">
-            <CardTitle className="text-lg font-bold text-[#333333]">Notifications</CardTitle>
-            <CardDescription className="text-[#666666]">Configure how you receive notifications</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6 pt-3 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-[#666666]" />
-                <Label htmlFor="email-notifications" className="font-normal text-[#555555]">
-                  Email notifications
-                </Label>
-              </div>
-              <Switch id="email-notifications" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bell className="h-4 w-4 text-[#666666]" />
-                <Label htmlFor="app-notifications" className="font-normal text-[#555555]">
-                  In-app notifications
-                </Label>
-              </div>
-              <Switch id="app-notifications" defaultChecked />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-[#E0E0E0] shadow-sm">
-          <CardHeader className="p-6 pb-3">
-            <CardTitle className="text-lg font-bold text-[#333333]">Privacy</CardTitle>
-            <CardDescription className="text-[#666666]">Control your data sharing preferences</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6 pt-3 space-y-4">
-            <div className="space-y-3">
-              <Label className="text-[#333333]">Share anonymous usage data</Label>
-              <RadioGroup defaultValue="yes">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="yes" id="share-yes" className="text-[#007BFF]" />
-                  <Label htmlFor="share-yes" className="text-[#555555]">
-                    Yes, help improve the platform
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="no" id="share-no" className="text-[#007BFF]" />
-                  <Label htmlFor="share-no" className="text-[#555555]">
-                    No, don't share my data
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-[#E0E0E0] shadow-sm">
-          <CardHeader className="p-6 pb-3">
-            <CardTitle className="text-lg font-bold text-[#333333]">Account</CardTitle>
-            <CardDescription className="text-[#666666]">Manage your account security</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6 pt-3 space-y-4">
-            <Button variant="outline" className="text-[#007BFF] border-[#007BFF]">
-              Change Password
-            </Button>
-            <Separator />
-            <Button variant="destructive" className="bg-[#DC3545] hover:bg-[#C82333]">
-              Logout
-            </Button>
-          </CardContent>
-        </Card>
+              
+              <Button className="mt-4" variant="outline" asChild>
+                <Link href="/app/settings/manage-resources">
+                  <Database className="w-4 h-4 mr-2" />
+                  Manage Resources
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

@@ -1,18 +1,108 @@
 "use client"
 
-import { useState } from "react"
+import { useState, FormEvent, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ArrowRight, Menu, X } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
+import { useAuth } from "./context/AuthContext"
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" })
+  const [registerForm, setRegisterForm] = useState({ 
+    fullName: "", 
+    username: "", 
+    password: "", 
+    confirmPassword: "" 
+  })
+  const [activeTab, setActiveTab] = useState("login")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  
+  const { login, register, isAuthenticated } = useAuth()
+  const router = useRouter()
+
+  // Use useEffect for navigation instead of direct conditional rendering
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/app')
+    }
+  }, [isAuthenticated, router])
+
+  const handleLoginSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!loginForm.username || !loginForm.password) {
+      setError("Please enter both username and password")
+      return
+    }
+    
+    try {
+      setLoading(true)
+      setError("")
+      await login({
+        username: loginForm.username,
+        password: loginForm.password
+      })
+      // On success, the login function will redirect to /app
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Login failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRegisterSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    
+    // Validation - only require username and password
+    if (!registerForm.username || !registerForm.password || !registerForm.confirmPassword) {
+      setError("Please fill in all required fields")
+      return
+    }
+    
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setError("Passwords do not match")
+      return
+    }
+
+    if (registerForm.password.length < 6) {
+      setError("Password must be at least 6 characters long")
+      return
+    }
+    
+    try {
+      setLoading(true)
+      setError("")
+      // Include fullName in registration data if provided
+      await register({
+        username: registerForm.username,
+        password: registerForm.password,
+        fullName: registerForm.fullName || undefined, // Only include if it has a value
+        role: "CASE_MANAGER"
+      })
+      // On success, the register function will login and redirect to /app
+    } catch (err: any) {
+      console.error('Registration error details:', err.response?.data);
+      if (err.response?.data?.errors) {
+        // Handle validation errors from the API
+        const errorMessages = err.response.data.errors.map((e: any) => 
+          Object.values(e).join(': ')
+        ).join(', ');
+        setError(errorMessages || "Registration failed. Please try again.");
+      } else {
+        setError(err.response?.data?.message || "Registration failed. Please try again.");
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -238,51 +328,103 @@ export default function LandingPage() {
 
               <Card>
                 <CardContent className="pt-6">
-                  <Tabs defaultValue="login" className="w-full">
+                  <Tabs 
+                    defaultValue="login" 
+                    value={activeTab} 
+                    onValueChange={setActiveTab}
+                    className="w-full"
+                  >
                     <TabsList className="grid w-full grid-cols-2 mb-6">
                       <TabsTrigger value="login">Login</TabsTrigger>
                       <TabsTrigger value="signup">Sign Up</TabsTrigger>
                     </TabsList>
 
+                    {error && (
+                      <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4 text-sm">
+                        {error}
+                      </div>
+                    )}
+
                     <TabsContent value="login" className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
-                        <Input id="email" type="email" placeholder="name@example.com" />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="password">Password</Label>
-                          <Link href="#" className="text-sm text-primary hover:underline">
-                            Forgot password?
-                          </Link>
+                      <form onSubmit={handleLoginSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="username">Username <span className="text-xs text-red-500">*</span></Label>
+                          <Input 
+                            id="username" 
+                            value={loginForm.username}
+                            onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
+                            placeholder="username" 
+                            required
+                          />
                         </div>
-                        <Input id="password" type="password" />
-                      </div>
-                      <Button className="w-full" asChild>
-                        <Link href="/app">Login</Link>
-                      </Button>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="password">Password <span className="text-xs text-red-500">*</span></Label>
+                            <Link href="#" className="text-sm text-primary hover:underline">
+                              Forgot password?
+                            </Link>
+                          </div>
+                          <Input 
+                            id="password" 
+                            type="password" 
+                            value={loginForm.password}
+                            onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                            required
+                          />
+                        </div>
+                        <Button className="w-full" type="submit" disabled={loading}>
+                          {loading ? 'Logging in...' : 'Login'}
+                        </Button>
+                      </form>
                     </TabsContent>
 
                     <TabsContent value="signup" className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-name">Full Name</Label>
-                        <Input id="signup-name" placeholder="John Doe" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-email">Email</Label>
-                        <Input id="signup-email" type="email" placeholder="name@example.com" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-password">Password</Label>
-                        <Input id="signup-password" type="password" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-confirm">Confirm Password</Label>
-                        <Input id="signup-confirm" type="password" />
-                      </div>
-                      <Button className="w-full" asChild>
-                        <Link href="/app">Create Account</Link>
-                      </Button>
+                      <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="signup-name">Full Name <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                          <Input 
+                            id="signup-name" 
+                            placeholder="John Doe" 
+                            value={registerForm.fullName}
+                            onChange={(e) => setRegisterForm({...registerForm, fullName: e.target.value})}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="signup-username">Username <span className="text-xs text-red-500">*</span></Label>
+                          <Input 
+                            id="signup-username" 
+                            placeholder="username" 
+                            value={registerForm.username}
+                            onChange={(e) => setRegisterForm({...registerForm, username: e.target.value})}
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Must be at least 3 characters long</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="signup-password">Password <span className="text-xs text-red-500">*</span></Label>
+                          <Input 
+                            id="signup-password" 
+                            type="password" 
+                            value={registerForm.password}
+                            onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Must be at least 6 characters long</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="signup-confirm">Confirm Password <span className="text-xs text-red-500">*</span></Label>
+                          <Input 
+                            id="signup-confirm" 
+                            type="password" 
+                            value={registerForm.confirmPassword}
+                            onChange={(e) => setRegisterForm({...registerForm, confirmPassword: e.target.value})}
+                            required
+                          />
+                        </div>
+                        <Button className="w-full" type="submit" disabled={loading}>
+                          {loading ? 'Creating Account...' : 'Create Account'}
+                        </Button>
+                      </form>
                     </TabsContent>
                   </Tabs>
                 </CardContent>
