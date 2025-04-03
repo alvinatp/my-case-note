@@ -7,7 +7,6 @@ import {
   getRecentUpdates,
   createResource,
   importResources,
-  addResourceNote,
   saveResource,
   unsaveResource,
   getSavedResources
@@ -30,12 +29,11 @@ const router = express.Router();
 router.get('/', getResourcesRules(), validate, getResources);
 router.get('/search', searchResourcesRules(), validate, searchResources);
 router.get('/updates', getUpdatesRules(), validate, getRecentUpdates);
-router.get('/:id', resourceIdRule(), validate, getResourceById);
+router.get('/saved', protect, getSavedResources);
 
 // Protected Routes (Requires Login)
 router.post('/:id/save', protect, resourceIdRule(), validate, saveResource);
 router.delete('/:id/save', protect, resourceIdRule(), validate, unsaveResource);
-router.get('/user/saved', protect, getSavedResources);
 
 // Private Routes (Requires Login)
 router.put(
@@ -53,14 +51,16 @@ router.post(
   restrictTo(Role.CASE_MANAGER, Role.ADMIN),
   resourceIdRule(),
   validate,
-  addResourceNote
+  updateResource
 );
+
+router.get('/:id', resourceIdRule(), validate, getResourceById);
 
 // Admin-only Routes
 router.post(
   '/create',
   protect,
-  restrictTo(Role.ADMIN),
+  restrictTo(Role.CASE_MANAGER, Role.ADMIN),
   createResourceRules(),
   validate,
   createResource
