@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, useEffect } from "react"
+import { use } from "react"
 import Link from "next/link"
 import { ArrowLeft, Clock, Edit, MapPin, Phone, Save, Star, Globe, Info, CalendarDays, List } from "lucide-react"
+import { format, parseISO } from 'date-fns'
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,23 +17,23 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { getResourceById, updateResourceDetails, addResourceNote, Resource } from "@/services/resources"
-import { format, parseISO } from 'date-fns'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { useAuth } from "@/app/context/AuthContext"
+import { getResourceById, updateResourceDetails, addResourceNote, saveResource, unsaveResource, getSavedResources, Resource } from "@/app/services/resources"
 
 // Helper function to format date
-const formatDate = (dateString: string | Date): string => {
+const formatDate = (dateString: string): string => {
   try {
-    const date = typeof dateString === 'string' ? parseISO(dateString) : dateString;
-    return format(date, "MM/dd/yyyy 'at' h:mm a");
+    return format(parseISO(dateString), 'MMM d, yyyy')
   } catch (e) {
-    return "Invalid date";
+    console.error('Error formatting date:', e)
+    return dateString
   }
-};
+}
 
 export default function ResourceDetailPage({ params }: { params: { id: string } }) {
-  // Unwrap params using React.use()
-  const unwrappedParams = use(params);
-  const resourceId = unwrappedParams.id;
+  const { user } = useAuth();
+  const resourceId = params.id
 
   const [resource, setResource] = useState<Resource | null>(null)
   const [loading, setLoading] = useState(true)
@@ -39,24 +41,41 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
 
   // State for Update Status form
   const [updateStatus, setUpdateStatus] = useState<Resource['status']>('AVAILABLE')
-  const [statusUpdateNote, setStatusUpdateNote] = useState("")
-  const [isSubmittingStatus, setIsSubmittingStatus] = useState(false)
+  const [updateNote, setUpdateNote] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [suggestRemoval, setSuggestRemoval] = useState(false)
 
   // State for Add Note form
-  const [newStandaloneNote, setNewStandaloneNote] = useState("")
+  const [newNote, setNewNote] = useState("")
   const [isSubmittingNote, setIsSubmittingNote] = useState(false)
 
   // State for Editing Details
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [editableContactDetails, setEditableContactDetails] = useState<Resource['contactDetails']>({})
+  const [editableServices, setEditableServices] = useState<string[]>([])
+  const [editableEligibility, setEditableEligibility] = useState<string[]>([])
+  const [editableHours, setEditableHours] = useState<Array<{day: string, hours: string}>>([])
   const [newService, setNewService] = useState("")
   const [newEligibility, setNewEligibility] = useState("")
   const [newHourDay, setNewHourDay] = useState("")
   const [newHourTime, setNewHourTime] = useState("")
   const [isSavingDetails, setIsSavingDetails] = useState(false)
 
+  // State for quick edit modal
+  const [isEditingDialog, setIsEditingDialog] = useState(false)
+  const [editableDetailsDialog, setEditableDetailsDialog] = useState<{
+    contactDetails: Resource['contactDetails']
+  }>({
+    contactDetails: {}
+  })
+  const [isDialogSaving, setIsDialogSaving] = useState(false)
+
+  // Success/error message state
   const [successMessage, setSuccessMessage] = useState("")
+
+  // Add save state
+  const [isSaved, setIsSaved] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
   // Fetch resource data
   const fetchResource = async () => {
@@ -66,7 +85,28 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
       const data = await getResourceById(resourceId)
       setResource(data)
       setUpdateStatus(data.status)
-      setEditableContactDetails(data.contactDetails || {})
+      
+      // Set up editable contact details
+      const contactDetails = data.contactDetails || {}
+      setEditableContactDetails(contactDetails)
+      
+      // Initialize service, eligibility and hours arrays from contact details
+      setEditableServices(contactDetails.services || [])
+      setEditableEligibility(contactDetails.eligibility || [])
+      setEditableHours(contactDetails.hours || [])
+      
+      // Initialize dialog edit state
+      setEditableDetailsDialog({
+        contactDetails: { ...contactDetails }
+      })
+      
+      // Check if this resource is saved
+      try {
+        const savedResources = await getSavedResources()
+        setIsSaved(savedResources.some(r => r.id === parseInt(resourceId)))
+      } catch (err) {
+        console.error('Error checking saved status:', err)
+      }
     } catch (err) {
       setError("Failed to load resource details")
       console.error("Error fetching resource:", err)
@@ -80,10 +120,10 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
   }, [resourceId])
 
   // Handle Status Update
-  const handleSubmitStatusUpdate = async () => {
+  const handleSubmitUpdate = async () => {
     if (!resource) return;
 
-    setIsSubmittingStatus(true);
+    setIsSubmitting(true);
     try {
       const updatePayload = {
         status: updateStatus,
@@ -93,11 +133,11 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
       await updateResourceDetails(resourceId, updatePayload);
 
       // If a note was added with the status change, add it separately
-      if (statusUpdateNote.trim()) {
-        await addResourceNote(resourceId, { content: statusUpdateNote.trim() });
+      if (updateNote.trim()) {
+        await addResourceNote(resourceId, { content: updateNote.trim() });
       }
 
-      setStatusUpdateNote("");
+      setUpdateNote("");
       setSuggestRemoval(false);
       setSuccessMessage("Resource status updated successfully!");
       await fetchResource();
@@ -105,19 +145,19 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
       setError("Failed to update resource status");
       console.error("Error updating resource status:", err);
     } finally {
-      setIsSubmittingStatus(false);
+      setIsSubmitting(false);
       setTimeout(() => setSuccessMessage(""), 3000);
     }
   }
 
   // Handle Adding Standalone Note
-  const handleSubmitStandaloneNote = async () => {
-    if (!newStandaloneNote.trim() || !resource) return;
+  const handleSubmitNote = async () => {
+    if (!newNote.trim() || !resource) return;
 
     setIsSubmittingNote(true);
     try {
-      await addResourceNote(resourceId, { content: newStandaloneNote.trim() });
-      setNewStandaloneNote("");
+      await addResourceNote(resourceId, { content: newNote.trim() });
+      setNewNote("");
       setSuccessMessage("Note added successfully!");
       await fetchResource();
     } catch (err) {
@@ -136,42 +176,46 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
 
   const addService = () => {
     if (newService.trim()) {
-      const currentServices = editableContactDetails.services || [];
-      handleDetailChange('services', [...currentServices, newService.trim()]);
+      setEditableServices(prev => [...prev, newService.trim()]);
+      handleDetailChange('services', [...editableServices, newService.trim()]);
       setNewService("");
     }
   };
 
   const removeService = (index: number) => {
-    const currentServices = editableContactDetails.services || [];
-    handleDetailChange('services', currentServices.filter((_, i) => i !== index));
+    const newServices = editableServices.filter((_, i) => i !== index);
+    setEditableServices(newServices);
+    handleDetailChange('services', newServices);
   };
 
   const addEligibility = () => {
     if (newEligibility.trim()) {
-      const currentEligibility = editableContactDetails.eligibility || [];
-      handleDetailChange('eligibility', [...currentEligibility, newEligibility.trim()]);
+      setEditableEligibility(prev => [...prev, newEligibility.trim()]);
+      handleDetailChange('eligibility', [...editableEligibility, newEligibility.trim()]);
       setNewEligibility("");
     }
   };
 
   const removeEligibility = (index: number) => {
-    const currentEligibility = editableContactDetails.eligibility || [];
-    handleDetailChange('eligibility', currentEligibility.filter((_, i) => i !== index));
+    const newEligibility = editableEligibility.filter((_, i) => i !== index);
+    setEditableEligibility(newEligibility);
+    handleDetailChange('eligibility', newEligibility);
   };
 
   const addHour = () => {
     if (newHourDay.trim() && newHourTime.trim()) {
-      const currentHours = editableContactDetails.hours || [];
-      handleDetailChange('hours', [...currentHours, { day: newHourDay.trim(), hours: newHourTime.trim() }]);
+      const newHour = { day: newHourDay.trim(), hours: newHourTime.trim() };
+      setEditableHours(prev => [...prev, newHour]);
+      handleDetailChange('hours', [...editableHours, newHour]);
       setNewHourDay("");
       setNewHourTime("");
     }
   };
 
   const removeHour = (index: number) => {
-    const currentHours = editableContactDetails.hours || [];
-    handleDetailChange('hours', currentHours.filter((_, i) => i !== index));
+    const newHours = editableHours.filter((_, i) => i !== index);
+    setEditableHours(newHours);
+    handleDetailChange('hours', newHours);
   };
 
   // Handle Saving Edited Details
@@ -190,6 +234,69 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
       console.error("Error saving details:", err);
     } finally {
       setIsSavingDetails(false);
+      setTimeout(() => setSuccessMessage(""), 3000);
+    }
+  };
+
+  // Handle saving/unsaving resource
+  const handleSaveToggle = async () => {
+    if (!resource) return;
+    
+    try {
+      setIsSaving(true)
+      if (isSaved) {
+        await unsaveResource(resourceId)
+        setIsSaved(false)
+        setSuccessMessage("Resource removed from saved list")
+      } else {
+        await saveResource(resourceId)
+        setIsSaved(true)
+        setSuccessMessage("Resource saved successfully")
+      }
+    } catch (err) {
+      setError("Failed to update saved status")
+      console.error("Error toggling save:", err)
+    } finally {
+      setIsSaving(false)
+      setTimeout(() => setSuccessMessage(""), 3000)
+    }
+  }
+
+  // Add this handler function before the return statement
+  const handleStatusChange = (value: string) => {
+    if (value === 'AVAILABLE' || value === 'LIMITED' || value === 'UNAVAILABLE') {
+      setUpdateStatus(value);
+    }
+  };
+
+  // Handle input change for the dialog edit
+  const handleDialogInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, field: keyof Resource['contactDetails']) => {
+    setEditableDetailsDialog({
+      ...editableDetailsDialog,
+      contactDetails: {
+        ...editableDetailsDialog.contactDetails,
+        [field]: e.target.value
+      }
+    });
+  };
+
+  // Handle save for the dialog edit
+  const handleDialogSave = async () => {
+    if (!resource) return;
+    setIsDialogSaving(true);
+    setError(null);
+    try {
+      await updateResourceDetails(resourceId, {
+        contactDetails: editableDetailsDialog.contactDetails
+      });
+      setIsEditingDialog(false);
+      setSuccessMessage("Resource details updated successfully!");
+      await fetchResource();
+    } catch (err) {
+      setError("Failed to save resource details");
+      console.error("Error saving details:", err);
+    } finally {
+      setIsDialogSaving(false);
       setTimeout(() => setSuccessMessage(""), 3000);
     }
   };
@@ -218,13 +325,13 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
     )
   }
 
-  const statusColors = {
+  const statusColors: Record<Resource['status'], string> = {
     AVAILABLE: "text-[#28A745] bg-[#28A74510]",
     LIMITED: "text-[#FFC107] bg-[#FFC10710]",
     UNAVAILABLE: "text-[#DC3545] bg-[#DC354510]"
   }
 
-  const statusText = {
+  const statusText: Record<Resource['status'], string> = {
     AVAILABLE: "Available",
     LIMITED: "Limited Availability",
     UNAVAILABLE: "Unavailable"
@@ -267,10 +374,100 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                   <CardTitle className="text-2xl font-bold text-[#333333]">{resource.name}</CardTitle>
                   <CardDescription className="text-[#666666]">{resource.category}</CardDescription>
                 </div>
-                <Button variant="ghost" size="icon">
-                  <Star className="h-5 w-5 text-[#CCCCCC] hover:text-[#FFC107]" />
-                  <span className="sr-only">Save resource</span>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Dialog open={isEditingDialog} onOpenChange={setIsEditingDialog}>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        className="border-[#007BFF] text-[#007BFF] hover:bg-blue-50"
+                      >
+                        <Edit className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Edit Resource</DialogTitle>
+                        <DialogDescription>
+                          Make changes to the resource details below.
+                        </DialogDescription>
+                      </DialogHeader>
+                      {error && (
+                        <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4 text-sm">
+                          {error}
+                        </div>
+                      )}
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label>Description</Label>
+                          <Textarea
+                            value={editableDetailsDialog.contactDetails.description || ""}
+                            onChange={(e) => handleDialogInputChange(e, 'description')}
+                            placeholder="Enter a description of the resource..."
+                            className="min-h-[100px]"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Address</Label>
+                          <Input
+                            value={editableDetailsDialog.contactDetails.address || ""}
+                            onChange={(e) => handleDialogInputChange(e, 'address')}
+                            placeholder="Enter address..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Phone</Label>
+                          <Input
+                            value={editableDetailsDialog.contactDetails.phone || ""}
+                            onChange={(e) => handleDialogInputChange(e, 'phone')}
+                            placeholder="Enter phone number..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Email</Label>
+                          <Input
+                            value={editableDetailsDialog.contactDetails.email || ""}
+                            onChange={(e) => handleDialogInputChange(e, 'email')}
+                            placeholder="Enter email..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Website</Label>
+                          <Input
+                            value={editableDetailsDialog.contactDetails.website || ""}
+                            onChange={(e) => handleDialogInputChange(e, 'website')}
+                            placeholder="Enter website URL..."
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-3">
+                        <Button variant="outline" onClick={() => setIsEditingDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleDialogSave} disabled={isDialogSaving}>
+                          {isDialogSaving ? (
+                            <>Saving...</>
+                          ) : (
+                            <>
+                              <Save className="mr-2 h-4 w-4" />
+                              Save Changes
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={handleSaveToggle}
+                    disabled={isSaving}
+                  >
+                    <Star className={`h-5 w-5 ${isSaved ? 'text-[#FFC107] fill-current' : 'text-[#CCCCCC]'} hover:text-[#FFC107]`} />
+                    <span className="sr-only">{isSaved ? 'Unsave' : 'Save'} resource</span>
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-0">
@@ -296,11 +493,11 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                 {currentContactDetails.website && (
                   <div className="flex items-center gap-2">
                     <Globe className="h-4 w-4 text-[#666666]" />
-                    <a
-                      href={currentContactDetails.website.startsWith('http') ? currentContactDetails.website : `https://${currentContactDetails.website}`}
-                      target="_blank"
+                    <a 
+                      href={currentContactDetails.website.startsWith('http') ? currentContactDetails.website : `https://${currentContactDetails.website}`} 
+                      target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-[#007BFF] hover:underline truncate"
+                      className="text-[#007BFF] hover:underline"
                     >
                       {currentContactDetails.website}
                     </a>
@@ -308,20 +505,19 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                 )}
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-[#666666]" />
-                  <span className="text-[#555555]">Last updated: {formatDate(resource.lastUpdated)}</span>
+                  <span className="text-[#555555]">Last updated {formatDate(resource.lastUpdated)}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Tabs for Notes and Details */}
           <Tabs defaultValue="notes">
             <TabsList className="border-b">
               <TabsTrigger
                 value="notes"
                 className="text-[#555555] data-[state=active]:text-[#007BFF] data-[state=active]:border-b-2 data-[state=active]:border-[#007BFF]"
               >
-                Case Manager Notes ({currentNotes.length})
+                Case Manager Notes
               </TabsTrigger>
               <TabsTrigger
                 value="details"
@@ -330,59 +526,91 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                 Additional Details
               </TabsTrigger>
             </TabsList>
-
-            {/* Notes Tab */}
             <TabsContent value="notes" className="mt-4">
               <Card className="border border-[#E0E0E0] shadow-sm">
                 <CardHeader className="p-6 pb-3">
-                  <CardTitle className="text-lg font-bold text-[#333333]">Resource Updates & Notes</CardTitle>
+                  <CardTitle className="text-lg font-bold text-[#333333]">Resource Updates</CardTitle>
+                  <CardDescription className="text-[#666666]">
+                    Recent updates and notes about this resource
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="p-6 pt-3">
-                  {/* Add Standalone Note Form */}
-                  <div className="mb-6 p-4 border border-[#E0E0E0] rounded-md bg-[#F9F9F9]">
-                    <h3 className="font-medium text-[#333333] mb-2">Add a New Note</h3>
-                    <Textarea
-                      placeholder="Share your latest finding about this resource..."
-                      className="mb-3 h-[80px] border-[#CCCCCC]"
-                      value={newStandaloneNote}
-                      onChange={(e) => setNewStandaloneNote(e.target.value)}
-                      maxLength={1000}
-                    />
-                    <div className="flex justify-end">
-                      <Button
-                        className="bg-[#007BFF] hover:bg-[#0056D2]"
-                        onClick={handleSubmitStandaloneNote}
-                        disabled={isSubmittingNote || !newStandaloneNote.trim()}
-                      >
-                        {isSubmittingNote ? "Adding..." : "Add Note"}
-                      </Button>
+
+                  {/* Add Note Form - Always visible for easier commenting */}
+                  <div className="mb-6 border-b pb-6">
+                    <div className="flex gap-4">
+                      <Avatar className="h-10 w-10 mt-1">
+                        <AvatarFallback>{user?.fullName ? user.fullName.charAt(0) : user?.username?.charAt(0) || 'CM'}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <Textarea
+                          placeholder={`Comment as ${user?.fullName || user?.username || 'Case Manager'}...`}
+                          className="mb-4 min-h-[40px] border-b border-l-0 border-r-0 border-t-0 rounded-none focus:ring-0 border-[#E0E0E0] hover:border-gray-400 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-[#007BFF] resize-none px-3 placeholder:text-gray-500 text-[15px] pt-2 pb-1 rounded-md"
+                          value={newNote}
+                          onChange={(e) => setNewNote(e.target.value)}
+                          onFocus={(e) => {
+                            // Increase height a bit when focused
+                            e.currentTarget.style.minHeight = '80px';
+                          }}
+                          onBlur={(e) => {
+                            // Reset height when not focused and empty
+                            if (!e.currentTarget.value) {
+                              e.currentTarget.style.minHeight = '40px';
+                            }
+                          }}
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            variant="outline"
+                            className="mr-2"
+                            onClick={() => setNewNote("")}
+                            disabled={!newNote.trim() || isSubmittingNote}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            className="bg-[#007BFF] hover:bg-[#0056D2]"
+                            onClick={handleSubmitNote}
+                            disabled={isSubmittingNote || !newNote.trim()}
+                          >
+                            {isSubmittingNote ? (
+                              <>
+                                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent"></span>
+                                Submitting...
+                              </>
+                            ) : (
+                              "Comment"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Display Notes */}
-                  <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                    {currentNotes.length > 0 ? currentNotes.map((note, index) => (
-                      <div key={index} className="flex gap-4 pb-4 border-b last:border-0">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>{note.username?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
-                        </Avatar>
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="font-medium text-[#333333]">{note.username || 'Unknown User'}</span>
-                            <span className="text-xs text-[#999999]"> - {formatDate(note.timestamp)}</span>
+                  <h3 className="font-medium text-[#333333] mb-4">Comments ({currentNotes.length})</h3>
+                  <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2">
+                    {currentNotes.length > 0 ? (
+                      currentNotes.map((note, index) => (
+                        <div key={index} className="flex gap-4">
+                          <Avatar className="h-10 w-10">
+                            <AvatarFallback>{note.username ? note.username.charAt(0) : 'U'}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-[#333333]">{note.username || 'User'}</span>
+                              <span className="text-xs text-[#999999]">{note.timestamp ? formatDate(note.timestamp) : 'Unknown'}</span>
+                            </div>
+                            <p className="text-sm text-[#555555]">{note.content}</p>
                           </div>
-                          <p className="text-sm text-[#555555] whitespace-pre-wrap">{note.content}</p>
                         </div>
-                      </div>
-                    )).reverse() // Show newest first
-                      : <p className="text-sm text-center text-gray-500 py-4">No notes added yet.</p>
-                    }
+                      ))
+                    ) : (
+                      <p className="text-center text-gray-500 py-4">No comments yet. Be the first to add a note about this resource.</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
-
-            {/* Details Tab */}
             <TabsContent value="details" className="mt-4">
               <Card className="border border-[#E0E0E0] shadow-sm">
                 <CardHeader className="p-6 pb-3">
@@ -394,13 +622,22 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                       </CardDescription>
                     </div>
                     {isEditingDetails ? (
-                      <Button
-                        className="bg-[#28A745] hover:bg-[#218838]"
+                      <Button 
+                        className="bg-[#28A745] hover:bg-[#218838]" 
                         onClick={handleSaveDetails}
                         disabled={isSavingDetails}
                       >
-                        <Save className="mr-2 h-4 w-4" />
-                        {isSavingDetails ? "Saving..." : "Save Changes"}
+                        {isSavingDetails ? (
+                          <>
+                            <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent"></span>
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="mr-2 h-4 w-4" />
+                            Save Changes
+                          </>
+                        )}
                       </Button>
                     ) : (
                       <Button
@@ -416,159 +653,184 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                 </CardHeader>
                 <CardContent className="p-6 pt-3">
                   <div className="space-y-6">
-                    {/* Services */}
+                    {/* Services Section */}
                     <div>
-                      <h3 className="font-medium text-[#333333] mb-2 flex items-center gap-2">
-                        <List size={16} /> Services Offered
-                      </h3>
+                      <h3 className="font-medium text-[#333333] mb-2">Services Offered</h3>
                       {isEditingDetails ? (
-                        <div className="space-y-2">
-                          {(editableContactDetails.services || []).map((service, index) => (
-                            <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                              <span className="text-sm text-[#555555]">{service}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-[#DC3545] hover:text-[#C82333] h-6 px-1"
-                                onClick={() => removeService(index)}
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                          <div className="flex gap-2 pt-2">
+                        <div className="space-y-3">
+                          <ul className="space-y-2">
+                            {editableServices.map((service, index) => (
+                              <li key={index} className="flex items-center justify-between">
+                                <span className="text-[#555555]">{service}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-[#DC3545] hover:text-[#C82333] h-6 px-2"
+                                  onClick={() => removeService(index)}
+                                >
+                                  Remove
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="flex gap-2">
                             <Input
                               placeholder="Add new service"
                               value={newService}
                               onChange={(e) => setNewService(e.target.value)}
-                              className="border-[#CCCCCC] h-9"
+                              className="border-[#CCCCCC]"
                             />
                             <Button
                               onClick={addService}
                               disabled={!newService.trim()}
-                              className="bg-[#007BFF] hover:bg-[#0056D2] h-9"
+                              className="bg-[#007BFF] hover:bg-[#0056D2]"
                             >
                               Add
                             </Button>
                           </div>
                         </div>
                       ) : (
-                        (editableContactDetails.services && editableContactDetails.services.length > 0) ?
-                          <ul className="mt-1 list-disc list-inside text-[#555555] text-sm space-y-1">
-                            {editableContactDetails.services.map((service, index) => (
+                        <ul className="mt-2 list-disc list-inside text-[#555555]">
+                          {editableServices.length > 0 ? (
+                            editableServices.map((service, index) => (
                               <li key={index}>{service}</li>
-                            ))}
-                          </ul>
-                          : <p className="text-sm text-gray-500 italic">No services listed.</p>
+                            ))
+                          ) : (
+                            <li className="text-gray-500">No services listed</li>
+                          )}
+                        </ul>
                       )}
                     </div>
 
-                    <Separator />
+                    <Separator className="my-4" />
 
-                    {/* Eligibility */}
+                    {/* Eligibility Section */}
                     <div>
-                      <h3 className="font-medium text-[#333333] mb-2 flex items-center gap-2">
-                        <Info size={16} /> Eligibility Requirements
-                      </h3>
+                      <h3 className="font-medium text-[#333333] mb-2">Eligibility Requirements</h3>
                       {isEditingDetails ? (
-                        <div className="space-y-2">
-                          {(editableContactDetails.eligibility || []).map((item, index) => (
-                            <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                              <span className="text-sm text-[#555555]">{item}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-[#DC3545] hover:text-[#C82333] h-6 px-1"
-                                onClick={() => removeEligibility(index)}
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                          <div className="flex gap-2 pt-2">
+                        <div className="space-y-3">
+                          <ul className="space-y-2">
+                            {editableEligibility.map((item, index) => (
+                              <li key={index} className="flex items-center justify-between">
+                                <span className="text-[#555555]">{item}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-[#DC3545] hover:text-[#C82333] h-6 px-2"
+                                  onClick={() => removeEligibility(index)}
+                                >
+                                  Remove
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="flex gap-2">
                             <Input
-                              placeholder="Add new requirement"
+                              placeholder="Add new eligibility requirement"
                               value={newEligibility}
                               onChange={(e) => setNewEligibility(e.target.value)}
-                              className="border-[#CCCCCC] h-9"
+                              className="border-[#CCCCCC]"
                             />
                             <Button
                               onClick={addEligibility}
                               disabled={!newEligibility.trim()}
-                              className="bg-[#007BFF] hover:bg-[#0056D2] h-9"
+                              className="bg-[#007BFF] hover:bg-[#0056D2]"
                             >
                               Add
                             </Button>
                           </div>
                         </div>
                       ) : (
-                        (editableContactDetails.eligibility && editableContactDetails.eligibility.length > 0) ?
-                          <ul className="mt-1 list-disc list-inside text-[#555555] text-sm space-y-1">
-                            {editableContactDetails.eligibility.map((item, index) => (
+                        <ul className="mt-2 list-disc list-inside text-[#555555]">
+                          {editableEligibility.length > 0 ? (
+                            editableEligibility.map((item, index) => (
                               <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                          : <p className="text-sm text-gray-500 italic">No eligibility requirements listed.</p>
+                            ))
+                          ) : (
+                            <li className="text-gray-500">No eligibility requirements listed</li>
+                          )}
+                        </ul>
                       )}
                     </div>
 
-                    <Separator />
+                    <Separator className="my-4" />
 
-                    {/* Hours */}
+                    {/* Hours Section */}
                     <div>
-                      <h3 className="font-medium text-[#333333] mb-2 flex items-center gap-2">
-                        <CalendarDays size={16} /> Hours of Operation
-                      </h3>
+                      <h3 className="font-medium text-[#333333] mb-2">Hours of Operation</h3>
                       {isEditingDetails ? (
-                        <div className="space-y-2">
-                          {(editableContactDetails.hours || []).map((item, index) => (
-                            <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded gap-2">
-                              <span className="text-sm text-[#555555] flex-1">
-                                <strong>{item.day}:</strong> {item.hours}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-[#DC3545] hover:text-[#C82333] h-6 px-1"
-                                onClick={() => removeHour(index)}
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                          <div className="flex gap-2 pt-2">
+                        <div className="space-y-3">
+                          <div className="space-y-3">
+                            {editableHours.map((item, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <Input
+                                  value={item.day}
+                                  placeholder="Day"
+                                  onChange={(e) => {
+                                    const updatedHours = [...editableHours];
+                                    updatedHours[index] = { ...item, day: e.target.value };
+                                    setEditableHours(updatedHours);
+                                    handleDetailChange('hours', updatedHours);
+                                  }}
+                                  className="border-[#CCCCCC] flex-1"
+                                />
+                                <Input
+                                  value={item.hours}
+                                  placeholder="Hours"
+                                  onChange={(e) => {
+                                    const updatedHours = [...editableHours];
+                                    updatedHours[index] = { ...item, hours: e.target.value };
+                                    setEditableHours(updatedHours);
+                                    handleDetailChange('hours', updatedHours);
+                                  }}
+                                  className="border-[#CCCCCC] flex-1"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-[#DC3545] hover:text-[#C82333] h-9 px-2"
+                                  onClick={() => removeHour(index)}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
                             <Input
-                              placeholder="Day(s)"
+                              placeholder="Day (e.g., Monday)"
                               value={newHourDay}
                               onChange={(e) => setNewHourDay(e.target.value)}
-                              className="border-[#CCCCCC] h-9"
+                              className="border-[#CCCCCC]"
                             />
                             <Input
-                              placeholder="Hours (e.g., 9am-5pm)"
+                              placeholder="Hours (e.g., 9AM-5PM)"
                               value={newHourTime}
                               onChange={(e) => setNewHourTime(e.target.value)}
-                              className="border-[#CCCCCC] h-9"
+                              className="border-[#CCCCCC]"
                             />
                             <Button
                               onClick={addHour}
                               disabled={!newHourDay.trim() || !newHourTime.trim()}
-                              className="bg-[#007BFF] hover:bg-[#0056D2] h-9"
+                              className="bg-[#007BFF] hover:bg-[#0056D2]"
                             >
                               Add
                             </Button>
                           </div>
                         </div>
                       ) : (
-                        (editableContactDetails.hours && editableContactDetails.hours.length > 0) ?
-                          <div className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[#555555] text-sm">
-                            {editableContactDetails.hours.map((item, index) => (
-                              <React.Fragment key={index}>
-                                <span className="font-medium">{item.day}:</span>
+                        <div className="mt-2 space-y-1 text-[#555555]">
+                          {editableHours.length > 0 ? (
+                            editableHours.map((item, index) => (
+                              <div key={index} className="flex gap-2">
+                                <span className="font-medium min-w-[100px]">{item.day}:</span>
                                 <span>{item.hours}</span>
-                              </React.Fragment>
-                            ))}
-                          </div>
-                          : <p className="text-sm text-gray-500 italic">No hours listed.</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-gray-500">No hours of operation listed</p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -578,18 +840,19 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
           </Tabs>
         </div>
 
-        {/* Sidebar for Status Update */}
         <div className="space-y-6">
           <Card className="border border-[#E0E0E0] shadow-sm">
             <CardHeader className="p-6 pb-3">
               <CardTitle className="text-lg font-bold text-[#333333]">Update Resource Status</CardTitle>
-              <CardDescription className="text-[#666666]">Share the latest availability</CardDescription>
+              <CardDescription className="text-[#666666]">Share updates with other case managers</CardDescription>
             </CardHeader>
             <CardContent className="p-6 pt-3">
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="status" className="text-[#333333]">Current Status</Label>
-                  <Select value={updateStatus} onValueChange={(value: Resource['status']) => setUpdateStatus(value)}>
+                  <Label htmlFor="status" className="text-[#333333]">
+                    Current Status
+                  </Label>
+                  <Select value={updateStatus} onValueChange={handleStatusChange}>
                     <SelectTrigger id="status" className="border-[#CCCCCC]">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
@@ -601,14 +864,15 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="status-note" className="text-[#333333]">Add Note (Optional)</Label>
+                  <Label htmlFor="note" className="text-[#333333]">
+                    Add Note
+                  </Label>
                   <Textarea
-                    id="status-note"
-                    placeholder="Add context for the status change (e.g., 'Only 2 beds left')..."
+                    id="note"
+                    placeholder="Share important updates about this resource..."
                     className="h-[100px] border-[#CCCCCC]"
-                    value={statusUpdateNote}
-                    onChange={(e) => setStatusUpdateNote(e.target.value)}
-                    maxLength={1000}
+                    value={updateNote}
+                    onChange={(e) => setUpdateNote(e.target.value)}
                   />
                 </div>
                 <div className="flex items-center space-x-2">
@@ -623,10 +887,17 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
                 </div>
                 <Button
                   className="w-full bg-[#007BFF] hover:bg-[#0056D2]"
-                  onClick={handleSubmitStatusUpdate}
-                  disabled={isSubmittingStatus}
+                  onClick={handleSubmitUpdate}
+                  disabled={isSubmitting}
                 >
-                  {isSubmittingStatus ? "Submitting..." : "Submit Status Update"}
+                  {isSubmitting ? (
+                    <>
+                      <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent"></span>
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit Update"
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -636,4 +907,6 @@ export default function ResourceDetailPage({ params }: { params: { id: string } 
     </div>
   )
 }
+
+
 

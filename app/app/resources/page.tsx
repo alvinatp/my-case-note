@@ -2,19 +2,22 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Filter, MapPin, Search, Star, Phone, Globe, Edit, Save } from "lucide-react"
+import { Filter, MapPin, Search, Star, Phone, Globe, Edit, Save, Plus } from "lucide-react"
 import { useSearchParams } from "next/navigation"
+import { useToast } from "../../../components/ui/use-toast"
+import { useForm } from "react-hook-form"
 
-import { Button } from "../../components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card"
-import { Input } from "../../components/ui/input"
-import { Checkbox } from "../../components/ui/checkbox"
-import { Label } from "../../components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "../../components/ui/sheet"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog"
-import { Textarea } from "../../components/ui/textarea"
-import { getResources, updateResourceDetails, getSavedResources, unsaveResource, saveResource } from "@/services/resources"
+import { Button } from "../../../components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../../components/ui/card"
+import { Input } from "../../../components/ui/input"
+import { Checkbox } from "../../../components/ui/checkbox"
+import { Label } from "../../../components/ui/label"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "../../../components/ui/sheet"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../../components/ui/dialog"
+import { Textarea } from "../../../components/ui/textarea"
+import { getResources, updateResourceDetails, getSavedResources, unsaveResource, saveResource, Resource as ResourceType, createResource } from "../../services/resources"
+import { useAuth } from "../../context/AuthContext"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select"
 
 // US zipcode validation regex
 const ZIPCODE_REGEX = /^\d{5}(-\d{4})?$/
@@ -36,23 +39,39 @@ interface Resource {
   notes: any[];
   createdAt: string;
   lastUpdated: string;
-  // Extra properties that might be used in legacy code
-  address?: string;
-  website?: string;
 }
 
 export default function ResourcesPage() {
+  const { user } = useAuth();
   const searchParams = useSearchParams()
   const [searchQuery, setSearchQuery] = useState("")
   const [zipcode, setZipcode] = useState("")
   const [zipcodeError, setZipcodeError] = useState<string | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string[]>([])
-  const [resources, setResources] = useState<Resource[]>([])
+  const [resources, setResources] = useState<ResourceType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+
+  // New Resource creation state
+  const { toast } = useToast()
+  const [isAddResourceOpen, setIsAddResourceOpen] = useState(false)
+  const [creatingResource, setCreatingResource] = useState(false)
+  const [newResource, setNewResource] = useState({
+    name: "",
+    category: "",
+    zipcode: "",
+    address: "",
+    phone: "",
+    email: "",
+    website: "",
+    description: "",
+    status: "AVAILABLE"
+  })
+  const [createSuccess, setCreateSuccess] = useState("")
+  const [createError, setCreateError] = useState("")
 
   // Initialize zipcode from URL parameters on mount
   useEffect(() => {
@@ -83,48 +102,49 @@ export default function ResourcesPage() {
     validateZipcode(value)
   }
 
+  // Extract fetchResources function
+  const fetchResources = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      console.log("Fetching all resources with params:", { page: currentPage, category: selectedCategories[0] })
+      
+      const params: { zipcode?: string; category?: string; page?: number } = { 
+        page: currentPage
+      }
+      
+      // Only include zipcode in API params if it's provided and valid
+      // This way we'll fetch all resources when no zipcode is entered
+      if (zipcode && validateZipcode(zipcode)) {
+        params.zipcode = zipcode
+      }
+      
+      if (selectedCategories.length > 0) {
+        params.category = selectedCategories[0] // API currently only supports one category
+      }
+      
+      const data = await getResources(params)
+      console.log("Resources API response:", data)
+      
+      if (data && data.resources) {
+        setResources(data.resources)
+        setTotalPages(data.totalPages || 1)
+        console.log("Set resources:", data.resources.length, "items")
+      } else {
+        console.error("Unexpected API response format:", data)
+        setError("Received invalid data format from server")
+      }
+    } catch (err: any) {
+      console.error("Error details:", err?.response?.data || err)
+      const errorMessage = err.response?.data?.errors?.[0]?.zipcode || "Failed to load resources. Please try again."
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Fetch resources when the page loads or when filters change
   useEffect(() => {
-    const fetchResources = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        console.log("Fetching all resources with params:", { page: currentPage, category: selectedCategories[0] })
-        
-        const params: { zipcode?: string; category?: string; page?: number } = { 
-          page: currentPage
-        }
-        
-        // Only include zipcode in API params if it's provided and valid
-        // This way we'll fetch all resources when no zipcode is entered
-        if (zipcode && validateZipcode(zipcode)) {
-          params.zipcode = zipcode
-        }
-        
-        if (selectedCategories.length > 0) {
-          params.category = selectedCategories[0] // API currently only supports one category
-        }
-        
-        const data = await getResources(params)
-        console.log("Resources API response:", data)
-        
-        if (data && data.resources) {
-          setResources(data.resources)
-          setTotalPages(data.totalPages || 1)
-          console.log("Set resources:", data.resources.length, "items")
-        } else {
-          console.error("Unexpected API response format:", data)
-          setError("Received invalid data format from server")
-        }
-      } catch (err: any) {
-        console.error("Error details:", err?.response?.data || err)
-        const errorMessage = err.response?.data?.errors?.[0]?.zipcode || "Failed to load resources. Please try again."
-        setError(errorMessage)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchResources()
   }, [zipcode, selectedCategories, currentPage])
 
@@ -159,11 +179,258 @@ export default function ResourcesPage() {
     setStatusFilter((prev) => (prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]))
   }
 
+  // Handle resource form field changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setNewResource(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+
+  // Create new resource
+  const handleCreateResource = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setCreatingResource(true)
+    
+    try {
+      // Prepare resource payload according to API expectations
+      const resourcePayload = {
+        name: newResource.name,
+        category: newResource.category,
+        status: newResource.status as "AVAILABLE" | "LIMITED" | "UNAVAILABLE",
+        contactDetails: {
+          address: newResource.address,
+          phone: newResource.phone,
+          email: newResource.email,
+          website: newResource.website,
+          description: newResource.description
+        },
+        zipcode: newResource.zipcode
+      }
+      
+      await createResource(resourcePayload)
+      setIsAddResourceOpen(false)
+      setNewResource({
+        name: "",
+        category: "",
+        zipcode: "",
+        address: "",
+        phone: "",
+        email: "",
+        website: "",
+        description: "",
+        status: "AVAILABLE"
+      })
+      // Refresh resources after creating a new one
+      fetchResources()
+      toast({
+        title: "Resource created",
+        description: "The resource has been successfully created",
+      })
+    } catch (error) {
+      console.error("Failed to create resource:", error)
+      toast({
+        title: "Failed to create resource",
+        description: "There was an error creating the resource. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setCreatingResource(false)
+    }
+  }
+
+  // Update isAdmin check to be case-insensitive
+  const isAdmin = user?.role?.toUpperCase() === 'ADMIN'
+  
+  // Debug user role
+  console.log('User role:', user?.role)
+  console.log('Is admin?', isAdmin)
+
   return (
     <div className="p-6">
-      <div className="flex flex-col gap-4 mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-[#333333]">Find Resources</h1>
-        <p className="text-[#555555] text-base">Search for resources by name, category, or location</p>
+      <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col gap-4">
+          <h1 className="text-2xl font-bold tracking-tight text-[#333333]">Find Resources</h1>
+          <p className="text-[#555555] text-base">Search for resources by name, category, or location</p>
+        </div>
+        
+        {/* Add Resource button visible to all authenticated users */}
+        {user && (
+          <Dialog open={isAddResourceOpen} onOpenChange={setIsAddResourceOpen}>
+            <DialogTrigger asChild>
+              <button 
+                className="ml-auto py-2.5 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg flex items-center transition-colors ease-in-out"
+                type="button"
+              >
+                <Plus className="h-5 w-5 mr-2 stroke-[2.5]" />
+                Add New Resource
+              </button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>Add New Resource</DialogTitle>
+                <DialogDescription>
+                  Create a new resource to add to the directory.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateResource}>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="name" className="text-right">
+                      Name *
+                    </Label>
+                    <Input
+                      id="name"
+                      name="name"
+                      value={newResource.name}
+                      onChange={handleInputChange}
+                      placeholder="Resource name"
+                      className="col-span-3"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="category" className="text-right">
+                      Category *
+                    </Label>
+                    <select
+                      id="category"
+                      name="category"
+                      value={newResource.category}
+                      onChange={handleInputChange}
+                      className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      required
+                    >
+                      <option value="">Select a category</option>
+                      {categories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="zipcode" className="text-right">
+                      Zipcode *
+                    </Label>
+                    <Input
+                      id="zipcode"
+                      name="zipcode"
+                      value={newResource.zipcode}
+                      onChange={handleInputChange}
+                      placeholder="12345"
+                      className="col-span-3"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="address" className="text-right">
+                      Address
+                    </Label>
+                    <Input
+                      id="address"
+                      name="address"
+                      value={newResource.address}
+                      onChange={handleInputChange}
+                      placeholder="123 Main St, City, State"
+                      className="col-span-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="phone" className="text-right">
+                      Phone
+                    </Label>
+                    <Input
+                      id="phone"
+                      name="phone"
+                      value={newResource.phone}
+                      onChange={handleInputChange}
+                      placeholder="(123) 456-7890"
+                      className="col-span-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="email" className="text-right">
+                      Email
+                    </Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      value={newResource.email}
+                      onChange={handleInputChange}
+                      placeholder="contact@example.com"
+                      className="col-span-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="website" className="text-right">
+                      Website
+                    </Label>
+                    <Input
+                      id="website"
+                      name="website"
+                      value={newResource.website}
+                      onChange={handleInputChange}
+                      placeholder="https://example.com"
+                      className="col-span-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="status" className="text-right">
+                      Status
+                    </Label>
+                    <select
+                      id="status"
+                      name="status"
+                      value={newResource.status}
+                      onChange={handleInputChange}
+                      className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="AVAILABLE">Available</option>
+                      <option value="LIMITED">Limited</option>
+                      <option value="UNAVAILABLE">Unavailable</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-4 items-start gap-4">
+                    <Label htmlFor="description" className="text-right pt-2">
+                      Description
+                    </Label>
+                    <Textarea
+                      id="description"
+                      name="description"
+                      value={newResource.description}
+                      onChange={handleInputChange}
+                      placeholder="Describe this resource..."
+                      className="col-span-3"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                {createError && (
+                  <p className="text-destructive text-sm mt-2">{createError}</p>
+                )}
+                {createSuccess && (
+                  <p className="text-green-600 text-sm mt-2">{createSuccess}</p>
+                )}
+                <DialogFooter>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setIsAddResourceOpen(false)}
+                    disabled={creatingResource}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={creatingResource}>
+                    {creatingResource ? "Creating..." : "Create Resource"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* Search and Filter Bar */}
@@ -269,16 +536,6 @@ export default function ResourcesPage() {
         </div>
         <div className="flex items-center justify-between">
           <p className="text-sm text-[#666666]">{filteredResources.length} resources found</p>
-          <Select defaultValue="recent">
-            <SelectTrigger className="w-[150px] border-[#CCCCCC]">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recent">Recently Updated</SelectItem>
-              <SelectItem value="name">Name (A-Z)</SelectItem>
-              <SelectItem value="distance">Distance</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
@@ -314,7 +571,7 @@ export default function ResourcesPage() {
 }
 
 interface ResourceCardProps {
-  resource: Resource
+  resource: ResourceType
 }
 
 function ResourceCard({ resource }: ResourceCardProps) {
@@ -363,7 +620,7 @@ function ResourceCard({ resource }: ResourceCardProps) {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, field: keyof Resource['contactDetails']) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, field: keyof ResourceType['contactDetails']) => {
     setEditableDetails({
       ...editableDetails,
       contactDetails: {
@@ -411,10 +668,10 @@ function ResourceCard({ resource }: ResourceCardProps) {
 
   // Extract contact info if available
   const contactDetails = resource.contactDetails || {};
-  const address = contactDetails.address || resource.address || "";
+  const address = contactDetails.address || "";
   const phone = contactDetails.phone || "";
   const email = contactDetails.email || "";
-  const website = contactDetails.website || resource.website || "";
+  const website = contactDetails.website || "";
 
   const handleSave = async () => {
     setIsSaving(true)
