@@ -59,11 +59,15 @@ export const getResourceById = async (req, res) => {
 
 export const updateResource = async (req, res) => {
   const { id } = req.params;
-  const { status, notes: newNoteContent, suggest_removal } = req.body;
+  const { status, contactDetails, notes: newNoteContent, suggest_removal } = req.body;
   const userId = req.user.id;
 
   try {
-    const resource = await prisma.resource.findUnique({ where: { id } });
+    // Get both resource and user in parallel if we need to add a note
+    const [resource, user] = await Promise.all([
+      prisma.resource.findUnique({ where: { id } }),
+      newNoteContent ? prisma.user.findUnique({ where: { id: userId } }) : null
+    ]);
 
     if (!resource) {
       return res.status(404).json({ message: 'Resource not found' });
@@ -78,6 +82,21 @@ export const updateResource = async (req, res) => {
       }
     }
 
+    // Handle contactDetails update
+    if (contactDetails) {
+      // Validate contactDetails structure
+      if (typeof contactDetails !== 'object' || contactDetails === null) {
+        return res.status(400).json({ message: 'contactDetails must be an object' });
+      }
+
+      // Merge with existing contactDetails or replace entirely
+      dataToUpdate.contactDetails = {
+        ...resource.contactDetails,
+        ...contactDetails
+      };
+    }
+
+    // Handle notes update
     let currentNotes = [];
     if (resource.notes && typeof resource.notes === 'object' && Array.isArray(resource.notes)) {
       currentNotes = resource.notes;
@@ -90,9 +109,10 @@ export const updateResource = async (req, res) => {
       }
     }
 
-    if (newNoteContent) {
+    if (newNoteContent && user) {
       const newNote = {
-        userId: userId,
+        userId,
+        username: user.username,
         content: newNoteContent,
         timestamp: new Date().toISOString(),
       };
@@ -116,6 +136,68 @@ export const updateResource = async (req, res) => {
   } catch (error) {
     console.error('Update Resource Error:', error);
     res.status(500).json({ message: 'Server error updating resource' });
+  }
+};
+
+export const addResourceNote = async (req, res) => {
+  const { id } = req.params;
+  const { content } = req.body;
+  const userId = req.user.id;
+
+  if (!content || typeof content !== 'string' || content.trim() === '') {
+    return res.status(400).json({ message: 'Note content is required and must be a non-empty string' });
+  }
+
+  try {
+    // Get the resource and user in parallel
+    const [resource, user] = await Promise.all([
+      prisma.resource.findUnique({ where: { id } }),
+      prisma.user.findUnique({ where: { id: userId } })
+    ]);
+
+    if (!resource) {
+      return res.status(404).json({ message: 'Resource not found' });
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    let currentNotes = [];
+    if (resource.notes && typeof resource.notes === 'object' && Array.isArray(resource.notes)) {
+      currentNotes = resource.notes;
+    } else if (typeof resource.notes === 'string') {
+      try {
+        currentNotes = JSON.parse(resource.notes);
+        if (!Array.isArray(currentNotes)) currentNotes = [];
+      } catch (e) {
+        currentNotes = [];
+      }
+    }
+
+    const newNote = {
+      userId,
+      username: user.username,
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+    };
+    currentNotes.push(newNote);
+
+    const updatedResource = await prisma.resource.update({
+      where: { id },
+      data: {
+        notes: currentNotes,
+        lastUpdated: new Date() // Force update timestamp
+      },
+    });
+
+    res.status(201).json({
+      message: 'Note added successfully',
+      notes: updatedResource.notes,
+    });
+  } catch (error) {
+    console.error('Add Resource Note Error:', error);
+    res.status(500).json({ message: 'Server error adding note' });
   }
 };
 
@@ -319,5 +401,105 @@ export const importResources = async (req, res) => {
       message: 'Server error importing resources',
       error: error.message 
     });
+  }
+};
+
+export const saveResource = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  try {
+    // Check if resource exists
+    const resource = await prisma.resource.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!resource) {
+      return res.status(404).json({ message: 'Resource not found' });
+    }
+
+    // Check if already saved
+    const existingSave = await prisma.savedResource.findUnique({
+      where: {
+        userId_resourceId: {
+          userId,
+          resourceId: parseInt(id)
+        }
+      }
+    });
+
+    if (existingSave) {
+      return res.status(400).json({ message: 'Resource already saved' });
+    }
+
+    // Save the resource
+    await prisma.savedResource.create({
+      data: {
+        userId,
+        resourceId: parseInt(id)
+      }
+    });
+
+    res.status(201).json({ message: 'Resource saved successfully' });
+  } catch (error) {
+    console.error('Save Resource Error:', error);
+    res.status(500).json({ message: 'Server error saving resource' });
+  }
+};
+
+export const unsaveResource = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  try {
+    // Check if save exists
+    const savedResource = await prisma.savedResource.findUnique({
+      where: {
+        userId_resourceId: {
+          userId,
+          resourceId: parseInt(id)
+        }
+      }
+    });
+
+    if (!savedResource) {
+      return res.status(404).json({ message: 'Resource not saved' });
+    }
+
+    // Remove the save
+    await prisma.savedResource.delete({
+      where: {
+        userId_resourceId: {
+          userId,
+          resourceId: parseInt(id)
+        }
+      }
+    });
+
+    res.json({ message: 'Resource unsaved successfully' });
+  } catch (error) {
+    console.error('Unsave Resource Error:', error);
+    res.status(500).json({ message: 'Server error unsaving resource' });
+  }
+};
+
+export const getSavedResources = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const savedResources = await prisma.savedResource.findMany({
+      where: { userId },
+      include: {
+        resource: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json(savedResources.map(sr => sr.resource));
+  } catch (error) {
+    console.error('Get Saved Resources Error:', error);
+    res.status(500).json({ message: 'Server error fetching saved resources' });
   }
 }; 

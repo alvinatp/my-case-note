@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 // Import routes
 import authRoutes from './routes/auth.js';
 import resourceRoutes from './routes/resources.js';
+import scraperRoutes from './routes/scraper.js';
 
 // Load environment variables
 dotenv.config();
@@ -24,10 +25,11 @@ app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/resources', resourceRoutes);
+app.use('/api/scraper', scraperRoutes);
 
 // Basic Root Route / Health Check
 app.get('/', (req, res) => {
-  res.send('MyCaseNote API is running...');
+  res.send('CaseSync API is running...');
 });
 
 // --- Error Handling Middleware ---
