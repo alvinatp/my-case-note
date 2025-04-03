@@ -25,12 +25,18 @@ export default function Dashboard() {
     const fetchResources = async () => {
       try {
         setLoading(true);
-        const recentUpdates = await resourceService.getRecentUpdates(5);
-        setRecentResources(recentUpdates);
+        // Get resources updated in the last 7 days
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
         
-        // For now, we'll just use some dummy saved resources
-        // In a real app, you'd fetch the user's saved resources from the backend
-        setSavedResources(dummySavedResources);
+        // Fetch both recent and saved resources in parallel
+        const [recentUpdates, savedResources] = await Promise.all([
+          resourceService.getRecentUpdates(oneWeekAgo.toISOString()),
+          resourceService.getSavedResources()
+        ]);
+        
+        setRecentResources(recentUpdates);
+        setSavedResources(savedResources);
       } catch (error) {
         console.error("Failed to fetch resources:", error);
       } finally {
@@ -146,15 +152,15 @@ interface ResourceCardProps {
 // Update the ResourceCard component to have better text handling and more flexible height
 function ResourceCard({ resource }: ResourceCardProps) {
   const statusColors = {
-    available: "text-[#28A745] bg-[#28A74510]",
-    limited: "text-[#FFC107] bg-[#FFC10710]",
-    unavailable: "text-[#DC3545] bg-[#DC354510]",
+    AVAILABLE: "text-[#28A745] bg-[#28A74510]",
+    LIMITED: "text-[#FFC107] bg-[#FFC10710]",
+    UNAVAILABLE: "text-[#DC3545] bg-[#DC354510]",
   }
 
   const statusText = {
-    available: "Available",
-    limited: "Limited",
-    unavailable: "Unavailable",
+    AVAILABLE: "Available",
+    LIMITED: "Limited",
+    UNAVAILABLE: "Unavailable",
   }
 
   return (
@@ -180,24 +186,4 @@ function ResourceCard({ resource }: ResourceCardProps) {
     </Card>
   )
 }
-
-// Sample data for saved resources
-const dummySavedResources: Resource[] = [
-  {
-    id: "4",
-    name: "Job Training Center",
-    category: "Employment & Education",
-    status: "available",
-    address: "101 Work Blvd, Anytown, USA",
-    lastUpdated: "5 days ago",
-  },
-  {
-    id: "5",
-    name: "Legal Aid Society",
-    category: "Legal & Financial Assistance",
-    status: "available",
-    address: "202 Justice Ave, Anytown, USA",
-    lastUpdated: "1 week ago",
-  },
-];
 

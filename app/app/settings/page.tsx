@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Database, UserCog } from "lucide-react"
+import { Database, UserCog, FileImport } from "lucide-react"
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -55,12 +55,21 @@ export default function SettingsPage() {
                 </p>
               </div>
               
-              <Button className="mt-4" variant="outline" asChild>
-                <Link href="/app/settings/manage-resources">
-                  <Database className="w-4 h-4 mr-2" />
-                  Manage Resources
-                </Link>
-              </Button>
+              <div className="mt-4 space-y-2">
+                <Button className="w-full justify-start" variant="outline" asChild>
+                  <Link href="/app/settings/manage-resources">
+                    <Database className="w-4 h-4 mr-2" />
+                    Manage Resources
+                  </Link>
+                </Button>
+                
+                <Button className="w-full justify-start" variant="outline" asChild>
+                  <Link href="/app/settings/scraper">
+                    <FileImport className="w-4 h-4 mr-2" />
+                    Resource Scraper
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

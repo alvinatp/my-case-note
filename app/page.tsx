@@ -3,7 +3,7 @@
 import { useState, FormEvent, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowRight, Menu, X } from "lucide-react"
+import { ArrowRight, Clock, MapPin, FolderKanban, Clipboard, Smartphone, CheckCircle, Menu, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
@@ -109,8 +109,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
-            <Image src="/placeholder.svg?height=32&width=32" alt="Logo" width={32} height={32} className="rounded" />
-            <span className="text-xl font-bold">MyCaseNote</span>
+            <Image src="/casesync-logo.png" alt="CaseSync Logo" width={110} height={25} priority />
           </div>
 
           <nav className="hidden md:flex items-center gap-6">
@@ -138,13 +137,12 @@ export default function LandingPage() {
               <div className="container flex h-16 items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Image
-                    src="/placeholder.svg?height=32&width=32"
-                    alt="Logo"
-                    width={32}
-                    height={32}
-                    className="rounded"
+                    src="/casesync-logo.png"
+                    alt="CaseSync Logo"
+                    width={100}
+                    height={24}
+                    priority
                   />
-                  <span className="text-xl font-bold">MyCaseNote</span>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}>
                   <X className="h-6 w-6" />
@@ -188,7 +186,7 @@ export default function LandingPage() {
           <div className="grid gap-10 lg:grid-cols-2 lg:gap-16 items-center">
             <div className="space-y-6">
               <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl">
-                MyCaseNote: Up-to-date Resources for Case Managers
+                CaseSync: Up-to-date Resources for Case Managers
               </h1>
               <p className="text-muted-foreground text-lg md:text-xl max-w-[700px] mb-8">
                 Find reliable, current social service resources and share real-time updates with your network. Never
@@ -233,38 +231,38 @@ export default function LandingPage() {
                   title: "Real-time Resource Updates",
                   description:
                     "See current availability status and share updates with other case managers in your network.",
-                  icon: "/placeholder.svg?height=48&width=48",
+                  icon: <Clock className="h-8 w-8 text-primary" />,
                 },
                 {
                   title: "Location-based Search",
                   description: "Find resources near your clients with zipcode filtering and distance-based results.",
-                  icon: "/placeholder.svg?height=48&width=48",
+                  icon: <MapPin className="h-8 w-8 text-primary" />,
                 },
                 {
                   title: "Resource Categories",
                   description: "Quickly filter by housing, food, healthcare, and other essential service categories.",
-                  icon: "/placeholder.svg?height=48&width=48",
+                  icon: <FolderKanban className="h-8 w-8 text-primary" />,
                 },
                 {
                   title: "Case Manager Notes",
                   description: "Leave notes and updates about resources for other case managers to reference.",
-                  icon: "/placeholder.svg?height=48&width=48",
+                  icon: <Clipboard className="h-8 w-8 text-primary" />,
                 },
                 {
                   title: "Mobile Friendly",
                   description: "Access resource information from anywhere, perfect for fieldwork and client meetings.",
-                  icon: "/placeholder.svg?height=48&width=48",
+                  icon: <Smartphone className="h-8 w-8 text-primary" />,
                 },
                 {
                   title: "Simple Verification",
                   description: "Easily verify and update resource information to keep the database current and reliable.",
-                  icon: "/placeholder.svg?height=48&width=48",
+                  icon: <CheckCircle className="h-8 w-8 text-primary" />,
                 },
               ].map((feature, index) => (
                 <Card key={index}>
                   <CardHeader>
                     <div className="flex items-center gap-4">
-                      <Image src={feature.icon || "/placeholder.svg"} alt="" width={48} height={48} className="rounded" />
+                      {feature.icon}
                       <CardTitle>{feature.title}</CardTitle>
                     </div>
                   </CardHeader>
@@ -463,114 +461,9 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="w-full border-t py-12 md:py-16">
-        <div className="container mx-auto max-w-7xl px-4">
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Image src="/placeholder.svg?height=32&width=32" alt="Logo" width={32} height={32} className="rounded" />
-                <span className="text-xl font-bold">MyCaseNote</span>
-              </div>
-              <p className="text-muted-foreground">
-                Simplifying workflows and boosting productivity for teams of all sizes.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-4">Product</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Features
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Pricing
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Integrations
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Changelog
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-4">Resources</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Documentation
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Guides
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Support
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    API
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-4">Company</h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    About
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Blog
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Careers
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground">
-                    Contact
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-8 pt-8 border-t">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} MyCaseNote. All rights reserved.</p>
-              <div className="flex gap-4">
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Privacy Policy
-                </Link>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Terms of Service
-                </Link>
-                <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-                  Cookie Policy
-                </Link>
-              </div>
-            </div>
-          </div>
+      <footer className="w-full border-t">
+        <div className="container py-10 mx-auto max-w-7xl px-4 flex justify-center">
+          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} CaseSync. All rights reserved.</p>
         </div>
       </footer>
     </div>
